@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "animejs": {
+      "source": "freshtechbro/claudedesignskills",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/animejs/SKILL.md",
+      "computedHash": "1ccd0229d51e46aaa5e0d7033f1160c9f21440af470fbaab25fb68d9190c3edb"
+    },
+    "better-auth-best-practices": {
+      "source": "better-auth/skills",
+      "sourceType": "github",
+      "skillPath": "better-auth/best-practices/SKILL.md",
+      "computedHash": "a4c830509e85557b59339d8d93a4e243e9e59c686e7678854d39230e12c2a6dc"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "4eabc66183767153e404b39d1b839b1c37f2d82d86f0a0d7e880a579d8d62336"
+    },
+    "heroui-react": {
+      "source": "heroui-inc/heroui",
+      "sourceType": "github",
+      "skillPath": "skills/heroui-react/SKILL.md",
+      "computedHash": "c9e1bb41fbc3cee782faae08bd465ae05cd685a6ed7cc3392464fdf29b3ab467"
+    },
+    "nextjs-best-practices": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nextjs-best-practices/SKILL.md",
+      "computedHash": "5344522f15f544513456e77b858377368f24e680732af5efeb5a67bbab021bc1"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "computedHash": "0a413bf988d06481f69bb81df2070741c3ba12dd9f1be2706d57f259c905992d"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-design-guidelines/SKILL.md",
+      "computedHash": "f3bc47f890f42a44db1007ab390709ec368e4b8c089baee6b0007182236ac474"
+    }
+  }
+}
