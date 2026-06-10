@@ -8,20 +8,20 @@ export function AppShellNav({ current }: AppShellNavProps) {
   const itemClass = (isActive: boolean) =>
     `inline-flex min-h-11 items-center justify-center rounded-full px-4 text-sm font-medium transition ${
       isActive
-        ? "bg-[#F3EBDD] text-[#17181E]"
-        : "border border-[#3A3C45] bg-[#111217] text-[#D2CDC2] hover:border-[#B9A57A]"
+        ? "bg-[#F3EBDD] text-[#17181E] shadow-[0_10px_30px_rgba(216,178,109,0.18)]"
+        : "border border-[#6D543B]/45 bg-[#211612]/80 text-[#D2CDC2] hover:border-[#D8B26D]/60"
     }`;
 
   return (
-    <header className="border-b border-[#2A2C34] bg-[#111217]/95 backdrop-blur">
+    <header className="border-b border-[#6D543B]/25 bg-[#1A100D]/82 backdrop-blur-xl">
       <div className="flex w-full flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8 xl:px-10">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-[#B9A57A]">
-              Screening deck
+            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-[#D8B26D]">
+              Sala de analisis
             </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-[#F3EBDD] sm:text-4xl">
-              Streaming cinema intelligence
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[#F3EBDD] sm:text-4xl">
+              Radar de peliculas y plataformas
             </h1>
           </div>
 
