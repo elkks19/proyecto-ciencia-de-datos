@@ -1,0 +1,20 @@
+<svg width="800" height="1200" viewBox="0 0 800 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="1200" fill="#140A07"/>
+  <rect width="800" height="1200" fill="url(#bg)"/>
+  <circle cx="596" cy="206" r="124" fill="#F19A53" fill-opacity="0.36"/>
+  <circle cx="603" cy="213" r="179" stroke="#F6B16D" stroke-opacity="0.18" stroke-width="2"/>
+  <path d="M512 121C418 250 349 399 294 577C246 734 229 846 201 1091H673C652 886 620 739 568 598C534 504 487 371 427 238L512 121Z" fill="#C76331"/>
+  <path d="M466 335C421 438 387 559 364 695C342 820 332 907 324 1091H607C595 900 579 803 553 677C528 558 494 446 466 335Z" fill="#2A2123"/>
+  <path d="M408 330C430 297 457 276 491 270C520 265 547 279 565 304C584 329 593 367 594 419C565 439 529 455 486 468C430 485 375 486 322 472C334 409 362 365 408 330Z" fill="#F4E7D2"/>
+  <rect x="66" y="75" width="668" height="1050" stroke="white" stroke-opacity="0.08" stroke-width="2"/>
+  <text x="80" y="933" fill="#F5EBD8" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="700" letter-spacing="6">THE MARTIAN</text>
+  <text x="82" y="989" fill="#E9B784" font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="5">SCI-FI / ADVENTURE / DRAMA</text>
+  <text x="82" y="1050" fill="#F5EBD8" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700">SOLVE FOR SURVIVAL</text>
+  <defs>
+    <linearGradient id="bg" x1="400" y1="0" x2="400" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1B0D08"/>
+      <stop offset="0.42" stop-color="#40201A"/>
+      <stop offset="1" stop-color="#110B09"/>
+    </linearGradient>
+  </defs>
+</svg>
