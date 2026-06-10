@@ -80,6 +80,8 @@ export type StatsOverview = {
       movies: number;
       dominantAudience: AudienceBucket;
       leadingPlatform: StreamingPlatform;
+      averageTomatometer: number;
+      averageAudience: number;
     };
     audienceStats: { bucket: AudienceBucket; count: number }[];
     genreStats: { genre: string; count: number }[];
@@ -94,6 +96,21 @@ export type StatsOverview = {
       dominantRating: string;
       tendency: string;
     }[];
+    rottenTomatoesCross: {
+      titlesWithReviews: number;
+      topPlatformByTomatometer: StreamingPlatform;
+      platformBreakdown: {
+        platform: StreamingPlatform;
+        reviewedCount: number;
+        availableCount: number;
+        averageTomatometer: number;
+        averageAudience: number;
+        averageGap: number;
+        freshShare: number;
+        topGenres: string[];
+        criticalPulse: string;
+      }[];
+    };
     model?: Record<string, unknown>;
   };
 };
@@ -104,7 +121,43 @@ export type ReviewsOverview = {
       averageTomatometer: number;
       averageAudience: number;
       highImpactCount: number;
+      reviewedTitles: number;
     };
+    correlations: {
+      runtimeToTomatometer: number;
+      runtimeToAudience: number;
+      yearToTomatometer: number;
+      yearToAudience: number;
+      strongestActor: string | null;
+    };
+    runtimeBands: {
+      label: string;
+      movieCount: number;
+      averageTomatometer: number;
+      averageAudience: number;
+    }[];
+    yearBands: {
+      label: string;
+      movieCount: number;
+      averageTomatometer: number;
+      averageAudience: number;
+    }[];
+    ageProfiles: {
+      bucket: AudienceBucket;
+      movieCount: number;
+      averageTomatometer: number;
+      averageAudience: number;
+      averageRuntime: number;
+    }[];
+    actorProfiles: {
+      actor: string;
+      movieCount: number;
+      averageTomatometer: number;
+      averageAudience: number;
+      averageRuntime: number;
+      latestReleaseYear: number | null;
+      notableTitles: string[];
+    }[];
     acceptanceRanking: {
       id: string;
       title: string;
@@ -128,6 +181,11 @@ export type ReviewsOverview = {
       reviewVolume: number;
       impactLevel: "High" | "Medium" | "Low";
       impactReason: string;
+      runtimeMinutes: number | null;
+      releaseYear: number | null;
+      ageRating: string;
+      audienceBuckets: AudienceBucket[];
+      actors: string[];
     }[];
   };
 };

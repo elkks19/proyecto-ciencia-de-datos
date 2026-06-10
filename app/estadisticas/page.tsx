@@ -5,9 +5,18 @@ import { getStatsOverview } from "../data/streaming-api";
 
 export default async function EstadisticasPage() {
   const overview = await getStatsOverview();
-  const { totals, audienceStats, genreStats, platformProfiles } = overview.data;
+  const { totals, audienceStats, genreStats, rottenTomatoesCross } = overview.data;
   const visibleGenreStats = genreStats.slice(0, 6);
   const strongestGenre = visibleGenreStats[0]?.count ?? 1;
+  const visiblePlatformBreakdown = [...rottenTomatoesCross.platformBreakdown].sort(
+    (a, b) => {
+      if (b.averageTomatometer !== a.averageTomatometer) {
+        return b.averageTomatometer - a.averageTomatometer;
+      }
+
+      return b.reviewedCount - a.reviewedCount;
+    }
+  );
 
   return (
     <main className="cinema-bg min-h-screen">
@@ -25,18 +34,18 @@ export default async function EstadisticasPage() {
           </Card>
           <Card className="warm-card rounded-[1.5rem] border border-[#3A3C45] bg-[#17181E] p-5">
             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#7F7A71]">
-              Audiencia dominante
+              Tomatometer medio
             </p>
             <p className="mt-2 text-2xl font-semibold text-[#F3EBDD]">
-              {totals.dominantAudience}
+              {totals.averageTomatometer}
             </p>
           </Card>
           <Card className="warm-card rounded-[1.5rem] border border-[#3A3C45] bg-[#17181E] p-5">
             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#7F7A71]">
-              Mejor compatibilidad
+              Audiencia RT media
             </p>
             <p className="mt-2 text-2xl font-semibold text-[#F3EBDD]">
-              {totals.leadingPlatform}
+              {totals.averageAudience}
             </p>
           </Card>
         </section>
@@ -116,20 +125,39 @@ export default async function EstadisticasPage() {
         <section className="warm-panel warm-reveal grid gap-6 rounded-[2rem] border border-[#3A3C45] bg-[#17181E] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.24)] xl:grid-cols-[0.9fr_1.1fr]">
           <div className="space-y-4">
             <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-[#B9A57A]">
-              Platform tendencies
+              Rotten Tomatoes cross
             </p>
             <h3 className="text-3xl font-semibold tracking-[-0.05em] text-[#F3EBDD]">
-              A que tiende cada plataforma
+              Cruce entre critica y catalogos
             </h3>
             <p className="text-sm leading-7 text-[#B5B0A6]">
-              La API agrupa las peliculas por la plataforma con mayor
-              compatibilidad estimada y resume patrones de genero, audiencia y
-              clasificacion.
+              Este bloque ya no resume compatibilidad estimada. Cruza las
+              peliculas encontradas en cada plataforma con sus metricas de
+              Rotten Tomatoes para detectar donde cae mejor la critica y donde
+              responde mejor la audiencia.
             </p>
+            <div className="grid gap-3 text-xs text-[#D2CDC2] sm:grid-cols-2">
+              <div className="rounded-[1.2rem] border border-[#3A3C45] bg-[#111217] p-4">
+                <p className="font-mono uppercase tracking-[0.22em] text-[#7F7A71]">
+                  Titulos con reviews
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-[#F3EBDD]">
+                  {rottenTomatoesCross.titlesWithReviews}
+                </p>
+              </div>
+              <div className="rounded-[1.2rem] border border-[#3A3C45] bg-[#111217] p-4">
+                <p className="font-mono uppercase tracking-[0.22em] text-[#7F7A71]">
+                  Lider por tomato
+                </p>
+                <p className="mt-2 text-xl font-semibold text-[#F3EBDD]">
+                  {rottenTomatoesCross.topPlatformByTomatometer}
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            {platformProfiles.map((item) => (
+            {visiblePlatformBreakdown.map((item) => (
               <div
                 key={item.platform}
                 className="warm-card rounded-[1.5rem] border border-[#3A3C45] bg-[#111217] p-4"
@@ -139,23 +167,23 @@ export default async function EstadisticasPage() {
                     {item.platform}
                   </span>
                   <span className="font-mono text-sm text-[#F3EBDD]">
-                    {item.averageScore}%
+                    Tomato {item.averageTomatometer}
                   </span>
                 </div>
                 <div className="mt-4 h-3 overflow-hidden rounded-full bg-[#17181E]">
                   <div
                     className="warm-bar-fill h-full rounded-full bg-[#D9C393]"
-                    style={{ width: `${item.averageScore}%` }}
+                    style={{ width: `${item.averageTomatometer}%` }}
                   />
                 </div>
                 <p className="mt-4 text-sm leading-6 text-[#B5B0A6]">
-                  {item.tendency}
+                  {item.criticalPulse}
                 </p>
                 <div className="mt-4 grid gap-3 text-xs text-[#D2CDC2]">
                   <div className="flex items-center justify-between gap-3">
-                    <span>Candidatas</span>
+                    <span>Peliculas con review</span>
                     <span className="font-mono text-[#F3EBDD]">
-                      {item.candidateCount}
+                      {item.reviewedCount}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
@@ -165,9 +193,22 @@ export default async function EstadisticasPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span>Clasificacion dominante</span>
+                    <span>Audience RT</span>
                     <span className="font-mono text-[#F3EBDD]">
-                      {item.dominantRating}
+                      {item.averageAudience}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Gap criticos-audiencia</span>
+                    <span className="font-mono text-[#F3EBDD]">
+                      {item.averageGap > 0 ? "+" : ""}
+                      {item.averageGap}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Fresh share</span>
+                    <span className="font-mono text-[#F3EBDD]">
+                      {item.freshShare}%
                     </span>
                   </div>
                 </div>

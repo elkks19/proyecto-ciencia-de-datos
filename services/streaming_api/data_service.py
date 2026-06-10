@@ -6,8 +6,12 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
+from html import unescape
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 
 import pandas as pd
 
@@ -265,6 +269,19 @@ def impact_reason(gap: int, fresh_share: int, volume: int) -> str:
     return "La conversacion critica tiene impacto moderado sobre la percepcion del contenido."
 
 
+def pearson_correlation(xs: list[float], ys: list[float]) -> float:
+    if len(xs) < 2 or len(xs) != len(ys):
+        return 0.0
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    denom_x = math.sqrt(sum((x - mean_x) ** 2 for x in xs))
+    denom_y = math.sqrt(sum((y - mean_y) ** 2 for y in ys))
+    if not denom_x or not denom_y:
+        return 0.0
+    return round(numerator / (denom_x * denom_y), 2)
+
+
 @dataclass
 class ModelResult:
     pipeline: Any | None
@@ -274,6 +291,7 @@ class ModelResult:
 
 class StreamingDataService:
     def __init__(self) -> None:
+        self.poster_cache: dict[str, str] = {}
         self.platform_df = self._load_platform_catalogs()
         self.rt_movies = self._load_rotten_tomatoes_movies()
         self.rt_reviews = pd.DataFrame()
@@ -527,6 +545,61 @@ class StreamingDataService:
             "rottenCriticsCount": safe_int(row.get("tomatometer_rotten_critics_count")),
         }
 
+    def _extract_rt_poster_url(self, page_html: str, page_url: str) -> str | None:
+        patterns = [
+            r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+            r'"image"\s*:\s*"([^"]+)"',
+            r'(https://resizing\.flixster\.com/[^"\'>\s]+)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, page_html, flags=re.IGNORECASE)
+            if not match:
+                continue
+            candidate = unescape(match.group(1).strip())
+            if candidate.startswith("//"):
+                return f"https:{candidate}"
+            if candidate.startswith("/"):
+                return urljoin(page_url, candidate)
+            if candidate.startswith("http"):
+                return candidate
+        return None
+
+    def _poster_url_for_movie(self, movie: dict[str, Any]) -> str:
+        poster_url = movie.get("posterUrl") or "/file.svg"
+        if poster_url != "/file.svg":
+            return poster_url
+
+        rt = movie.get("rottenTomatoes") or {}
+        page_url = rt.get("rottenTomatoesLink")
+        if not page_url:
+            return poster_url
+
+        if page_url in self.poster_cache:
+            return self.poster_cache[page_url]
+
+        request = Request(
+            page_url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        try:
+            with urlopen(request, timeout=4) as response:
+                page_html = response.read(400_000).decode("utf-8", errors="ignore")
+        except (TimeoutError, URLError, ValueError):
+            self.poster_cache[page_url] = poster_url
+            return poster_url
+        except Exception:
+            self.poster_cache[page_url] = poster_url
+            return poster_url
+
+        resolved = self._extract_rt_poster_url(page_html, page_url) or poster_url
+        self.poster_cache[page_url] = resolved
+        return resolved
+
     def _platform_availability(self, row: pd.Series) -> dict[str, Any]:
         if self.platform_df.empty:
             return {
@@ -695,13 +768,29 @@ class StreamingDataService:
         platform_ratings = {platform: Counter() for platform in PLATFORMS}
         platform_candidates = {platform: 0 for platform in PLATFORMS}
         platform_available = {platform: 0 for platform in PLATFORMS}
+        reviewed_titles = 0
+        tomatometer_values: list[int] = []
+        audience_values: list[int] = []
+        rt_platform_scores = {
+            platform: {
+                "tomato": [],
+                "audience": [],
+                "gap": [],
+                "fresh": 0,
+                "reviews": 0,
+                "genres": Counter(),
+            }
+            for platform in PLATFORMS
+        }
 
         for movie in self.movies:
             audience_counter.update(movie["audienceBuckets"])
             genre_counter.update(movie["genres"])
+            available_platforms = movie["platformAvailability"]["availablePlatforms"]
+
             for platform, odds in movie["streamingOdds"].items():
                 platform_sums[platform].append(odds)
-                if platform in movie["platformAvailability"]["availablePlatforms"]:
+                if platform in available_platforms:
                     platform_available[platform] += 1
 
             top_platform = max(
@@ -712,6 +801,26 @@ class StreamingDataService:
             platform_genres[top_platform].update(movie["genres"])
             platform_audiences[top_platform].update(movie["audienceBuckets"])
             platform_ratings[top_platform].update([movie["ageRating"]])
+
+            rt = movie.get("rottenTomatoes")
+            if not rt:
+                continue
+
+            tomato = safe_int(rt.get("tomatometerRating"))
+            audience = safe_int(rt.get("audienceRating"))
+            fresh_count = safe_int(rt.get("freshCriticsCount"))
+            review_count = safe_int(rt.get("tomatometerCount"))
+            reviewed_titles += 1
+            tomatometer_values.append(tomato)
+            audience_values.append(audience)
+
+            for platform in available_platforms:
+                rt_platform_scores[platform]["tomato"].append(tomato)
+                rt_platform_scores[platform]["audience"].append(audience)
+                rt_platform_scores[platform]["gap"].append(tomato - audience)
+                rt_platform_scores[platform]["fresh"] += fresh_count
+                rt_platform_scores[platform]["reviews"] += review_count
+                rt_platform_scores[platform]["genres"].update(movie["genres"])
 
         dominant = audience_counter.most_common(1)[0][0] if audience_counter else "Adults"
         platform_averages = [
@@ -747,17 +856,82 @@ class StreamingDataService:
                 }
             )
 
+        rt_platform_profiles = []
+        for platform in PLATFORMS:
+            scores = rt_platform_scores[platform]
+            tomato_scores = scores["tomato"]
+            audience_scores = scores["audience"]
+            gap_scores = scores["gap"]
+            top_genres = [genre for genre, _ in scores["genres"].most_common(3)]
+            average_tomato = (
+                int(round(sum(tomato_scores) / len(tomato_scores)))
+                if tomato_scores
+                else 0
+            )
+            average_audience = (
+                int(round(sum(audience_scores) / len(audience_scores)))
+                if audience_scores
+                else 0
+            )
+            average_gap = (
+                int(round(sum(gap_scores) / len(gap_scores))) if gap_scores else 0
+            )
+            fresh_share = (
+                int(round((scores["fresh"] / scores["reviews"]) * 100))
+                if scores["reviews"]
+                else 0
+            )
+
+            if average_gap >= 10:
+                critical_pulse = "La critica responde mejor que la audiencia en este catalogo."
+            elif average_gap <= -10:
+                critical_pulse = "La audiencia responde mejor que la critica en este catalogo."
+            elif average_tomato >= 75 and average_audience >= 75:
+                critical_pulse = "Critica y audiencia convergen con aceptacion alta."
+            else:
+                critical_pulse = "Critica y audiencia se mantienen relativamente alineadas."
+
+            rt_platform_profiles.append(
+                {
+                    "platform": platform,
+                    "reviewedCount": len(tomato_scores),
+                    "availableCount": platform_available[platform],
+                    "averageTomatometer": average_tomato,
+                    "averageAudience": average_audience,
+                    "averageGap": average_gap,
+                    "freshShare": fresh_share,
+                    "topGenres": top_genres,
+                    "criticalPulse": critical_pulse,
+                }
+            )
+
+        top_rt_platform = max(
+            rt_platform_profiles,
+            key=lambda item: (
+                item["averageTomatometer"],
+                item["reviewedCount"],
+                item["averageAudience"],
+            ),
+        )["platform"] if rt_platform_profiles else "Netflix"
+
         return {
             "data": {
                 "totals": {
                     "movies": len(self.movies),
                     "dominantAudience": dominant,
                     "leadingPlatform": leading,
+                    "averageTomatometer": int(round(sum(tomatometer_values) / len(tomatometer_values))) if tomatometer_values else 0,
+                    "averageAudience": int(round(sum(audience_values) / len(audience_values))) if audience_values else 0,
                 },
                 "audienceStats": [{"bucket": bucket, "count": audience_counter.get(bucket, 0)} for bucket in AUDIENCE_BUCKETS],
                 "genreStats": [{"genre": genre, "count": count} for genre, count in genre_counter.most_common(12)],
                 "platformAverages": platform_averages,
                 "platformProfiles": platform_profiles,
+                "rottenTomatoesCross": {
+                    "titlesWithReviews": reviewed_titles,
+                    "topPlatformByTomatometer": top_rt_platform,
+                    "platformBreakdown": rt_platform_profiles,
+                },
                 "model": self.model.metrics,
             }
         }
@@ -766,6 +940,25 @@ class StreamingDataService:
         items: list[dict[str, Any]] = []
         tomatometer_values: list[int] = []
         audience_values: list[int] = []
+        runtime_tomato_x: list[float] = []
+        runtime_tomato_y: list[float] = []
+        runtime_audience_x: list[float] = []
+        runtime_audience_y: list[float] = []
+        year_tomato_x: list[float] = []
+        year_tomato_y: list[float] = []
+        year_audience_x: list[float] = []
+        year_audience_y: list[float] = []
+        runtime_band_order = ["Corta", "Media", "Larga"]
+        runtime_bands = {
+            label: {"count": 0, "tomato": [], "audience": []}
+            for label in runtime_band_order
+        }
+        age_profiles = {
+            bucket: {"count": 0, "tomato": [], "audience": [], "runtime": []}
+            for bucket in AUDIENCE_BUCKETS
+        }
+        year_bands: dict[str, dict[str, Any]] = {}
+        actor_profiles: dict[str, dict[str, Any]] = {}
 
         for movie in self.movies:
             rt = movie.get("rottenTomatoes")
@@ -778,16 +971,71 @@ class StreamingDataService:
             if audience:
                 audience_values.append(audience)
             gap = tomato - audience
+            runtime = safe_int(movie.get("runtimeMinutes"))
+            release_year = safe_int(movie.get("releaseYear"))
             fresh_count = safe_int(rt.get("freshCriticsCount"))
             total_count = safe_int(rt.get("tomatometerCount"))
             fresh_share = int(round((fresh_count / total_count) * 100)) if total_count else tomato
             volume = safe_int(rt.get("audienceCount")) + safe_int(rt.get("tomatometerCount"))
             level = impact_level(gap, volume)
+            poster_url = self._poster_url_for_movie(movie)
+
+            if runtime:
+                runtime_tomato_x.append(runtime)
+                runtime_tomato_y.append(tomato)
+                runtime_audience_x.append(runtime)
+                runtime_audience_y.append(audience)
+                runtime_label = "Corta" if runtime <= 100 else "Media" if runtime <= 130 else "Larga"
+                runtime_bands[runtime_label]["count"] += 1
+                runtime_bands[runtime_label]["tomato"].append(tomato)
+                runtime_bands[runtime_label]["audience"].append(audience)
+
+            if release_year:
+                year_tomato_x.append(release_year)
+                year_tomato_y.append(tomato)
+                year_audience_x.append(release_year)
+                year_audience_y.append(audience)
+                decade = f"{(release_year // 10) * 10}s"
+                if decade not in year_bands:
+                    year_bands[decade] = {"count": 0, "tomato": [], "audience": []}
+                year_bands[decade]["count"] += 1
+                year_bands[decade]["tomato"].append(tomato)
+                year_bands[decade]["audience"].append(audience)
+
+            for bucket in movie.get("audienceBuckets", []):
+                age_profiles[bucket]["count"] += 1
+                age_profiles[bucket]["tomato"].append(tomato)
+                age_profiles[bucket]["audience"].append(audience)
+                if runtime:
+                    age_profiles[bucket]["runtime"].append(runtime)
+
+            for actor in rt.get("actors", [])[:6]:
+                if actor not in actor_profiles:
+                    actor_profiles[actor] = {
+                        "count": 0,
+                        "tomato": [],
+                        "audience": [],
+                        "runtime": [],
+                        "latestYear": 0,
+                        "titles": [],
+                    }
+                actor_profiles[actor]["count"] += 1
+                actor_profiles[actor]["tomato"].append(tomato)
+                actor_profiles[actor]["audience"].append(audience)
+                if runtime:
+                    actor_profiles[actor]["runtime"].append(runtime)
+                if release_year:
+                    actor_profiles[actor]["latestYear"] = max(
+                        actor_profiles[actor]["latestYear"], release_year
+                    )
+                if movie["title"] not in actor_profiles[actor]["titles"]:
+                    actor_profiles[actor]["titles"].append(movie["title"])
+
             items.append(
                 {
                     "id": movie["id"],
                     "title": movie["title"],
-                    "posterUrl": movie["posterUrl"],
+                    "posterUrl": poster_url,
                     "productionCompany": rt.get("productionCompany") or "",
                     "originalReleaseDate": rt.get("originalReleaseDate"),
                     "consensus": rt.get("criticsConsensus") or "",
@@ -799,12 +1047,70 @@ class StreamingDataService:
                     "impactLevel": level,
                     "impactReason": impact_reason(gap, fresh_share, volume),
                     "combinedScore": tomato + audience,
+                    "runtimeMinutes": runtime or None,
+                    "releaseYear": release_year or None,
+                    "ageRating": movie.get("ageRating") or "NR",
+                    "audienceBuckets": movie.get("audienceBuckets", []),
+                    "actors": rt.get("actors", [])[:5],
                 }
             )
 
         ranking = sorted(items, key=lambda item: item["combinedScore"], reverse=True)[:10]
         critical = sorted(items, key=lambda item: (item["impactLevel"] == "High", abs(item["criticGap"]), item["reviewVolume"]), reverse=True)[:20]
         distribution = Counter(item["impactLevel"] for item in items)
+        actor_rows = [
+            {
+                "actor": actor,
+                "movieCount": stats["count"],
+                "averageTomatometer": int(round(sum(stats["tomato"]) / len(stats["tomato"]))) if stats["tomato"] else 0,
+                "averageAudience": int(round(sum(stats["audience"]) / len(stats["audience"]))) if stats["audience"] else 0,
+                "averageRuntime": int(round(sum(stats["runtime"]) / len(stats["runtime"]))) if stats["runtime"] else 0,
+                "latestReleaseYear": stats["latestYear"] or None,
+                "notableTitles": stats["titles"][:3],
+            }
+            for actor, stats in actor_profiles.items()
+            if stats["count"] >= 2
+        ]
+        actor_rows.sort(
+            key=lambda item: (
+                item["averageTomatometer"],
+                item["movieCount"],
+                item["averageAudience"],
+            ),
+            reverse=True,
+        )
+        age_rows = [
+            {
+                "bucket": bucket,
+                "movieCount": stats["count"],
+                "averageTomatometer": int(round(sum(stats["tomato"]) / len(stats["tomato"]))) if stats["tomato"] else 0,
+                "averageAudience": int(round(sum(stats["audience"]) / len(stats["audience"]))) if stats["audience"] else 0,
+                "averageRuntime": int(round(sum(stats["runtime"]) / len(stats["runtime"]))) if stats["runtime"] else 0,
+            }
+            for bucket, stats in age_profiles.items()
+            if stats["count"] > 0
+        ]
+        age_rows.sort(key=lambda item: (item["movieCount"], item["averageTomatometer"]), reverse=True)
+        runtime_rows = [
+            {
+                "label": label,
+                "movieCount": runtime_bands[label]["count"],
+                "averageTomatometer": int(round(sum(runtime_bands[label]["tomato"]) / len(runtime_bands[label]["tomato"]))) if runtime_bands[label]["tomato"] else 0,
+                "averageAudience": int(round(sum(runtime_bands[label]["audience"]) / len(runtime_bands[label]["audience"]))) if runtime_bands[label]["audience"] else 0,
+            }
+            for label in runtime_band_order
+            if runtime_bands[label]["count"] > 0
+        ]
+        year_rows = [
+            {
+                "label": label,
+                "movieCount": stats["count"],
+                "averageTomatometer": int(round(sum(stats["tomato"]) / len(stats["tomato"]))) if stats["tomato"] else 0,
+                "averageAudience": int(round(sum(stats["audience"]) / len(stats["audience"]))) if stats["audience"] else 0,
+            }
+            for label, stats in year_bands.items()
+        ]
+        year_rows.sort(key=lambda item: item["label"], reverse=True)
 
         return {
             "data": {
@@ -812,7 +1118,19 @@ class StreamingDataService:
                     "averageTomatometer": int(round(sum(tomatometer_values) / len(tomatometer_values))) if tomatometer_values else 0,
                     "averageAudience": int(round(sum(audience_values) / len(audience_values))) if audience_values else 0,
                     "highImpactCount": distribution.get("High", 0),
+                    "reviewedTitles": len(items),
                 },
+                "correlations": {
+                    "runtimeToTomatometer": pearson_correlation(runtime_tomato_x, runtime_tomato_y),
+                    "runtimeToAudience": pearson_correlation(runtime_audience_x, runtime_audience_y),
+                    "yearToTomatometer": pearson_correlation(year_tomato_x, year_tomato_y),
+                    "yearToAudience": pearson_correlation(year_audience_x, year_audience_y),
+                    "strongestActor": actor_rows[0]["actor"] if actor_rows else None,
+                },
+                "runtimeBands": runtime_rows,
+                "yearBands": year_rows[:5],
+                "ageProfiles": age_rows,
+                "actorProfiles": actor_rows[:8],
                 "acceptanceRanking": [
                     {
                         "id": item["id"],
